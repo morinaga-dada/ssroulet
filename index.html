@@ -251,12 +251,6 @@
     z-index: 99;
     top: -20px;
   }
-  .shake { animation: shake 0.25s ease-in-out; }
-  @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-8px); }
-    75% { transform: translateX(8px); }
-  }
   .wheel.celebrate { animation: celebrate 0.6s ease-in-out 3; }
   @keyframes celebrate {
     0%, 100% { filter: drop-shadow(0 0 15px rgba(255,215,0,0.7)); }
@@ -320,7 +314,6 @@ const bulbsEl = document.getElementById('bulbs');
 const startBtn = document.getElementById('startBtn');
 const resetBtn = document.getElementById('resetBtn');
 const banner = document.getElementById('banner');
-const container = document.getElementById('container');
 
 // Bulbs around wheel
 const BULB_COUNT = 24;
@@ -330,11 +323,8 @@ function buildBulbs() {
     const b = document.createElement('div');
     b.className = 'bulb ' + (i % 2 === 0 ? 'on' : 'off');
     const angle = (i / BULB_COUNT) * 360;
-    const r = 'calc(50% - 8px)';
-    b.style.transform = `translate(-50%,-50%) rotate(${angle}deg) translateY(-50%) translateY(calc(50% - 210px + 210px)) translateY(-205px)`;
-    // simpler: position via angle
     const rad = angle * Math.PI / 180;
-    const R = 210; // half of wrap (420/2)
+    const R = 210;
     b.style.left = `calc(50% + ${Math.sin(rad) * R}px)`;
     b.style.top = `calc(50% - ${Math.cos(rad) * R}px)`;
     b.style.transform = 'translate(-50%, -50%)';
@@ -399,8 +389,8 @@ function drawWheel() {
   const n = candidates.length;
   const slice = 360 / n;
   for (let i = 0; i < n; i++) {
-    // Slice centered at top (pointer points up, angle 0 = top)
-    // We'll draw slices starting from -slice/2 at top, going clockwise
+    // slice i center is drawn at angle (-90 + i*slice) from +x axis
+    // so slice 0 center is at visual top (-90deg)
     const startA = -90 - slice/2 + i * slice;
     const endA = startA + slice;
     const sx = 190 * Math.cos(startA * Math.PI/180);
@@ -416,7 +406,6 @@ function drawWheel() {
     path.setAttribute('stroke-width', '3');
     wheelEl.appendChild(path);
 
-    // text
     const midA = (startA + endA) / 2;
     const tx = 120 * Math.cos(midA * Math.PI/180);
     const ty = 120 * Math.sin(midA * Math.PI/180);
@@ -458,9 +447,6 @@ function fanfare() {
   notes.forEach((f, i) => setTimeout(() => playBeep(f, 0.35, 'triangle'), i * 120));
 }
 
-// Animation engine with variable speed
-let spinState = null;
-
 async function startRoulette() {
   const candidates = getCandidates();
   if (candidates.length === 0) { alert('参加メンバーがいません!'); return; }
@@ -473,7 +459,7 @@ async function startRoulette() {
   startBtn.disabled = true;
   resetBtn.disabled = true;
 
-  // Choose winner
+  // 当選者を選ぶ（前回と同じ人は除外）
   const pool = candidates.filter(n => n !== lastWinner);
   const finalPool = pool.length > 0 ? pool : candidates;
   const winner = finalPool[Math.floor(Math.random() * finalPool.length)];
@@ -481,13 +467,13 @@ async function startRoulette() {
   const n = candidates.length;
   const slice = 360 / n;
 
-  // Compute target rotation so winner lands under top pointer.
-  // Slice i center is drawn at angle (i*slice) clockwise from top (before rotation).
-  // After rotating wheel by R (CSS rotate = clockwise), slice i center is at (i*slice + R) from top.
-  // For slice winIdx to sit at top: i*slice + R ≡ 0 (mod 360) → R ≡ -winIdx*slice.
+  // ★バグ修正: totalTurnsを整数にする（小数だと停止角度がズレて名前が一致しなくなる）
+  // slice i の中心は CSS rotate R 度後に (-90 + i*slice + R) の位置へ移動。
+  // ポインター(真上=-90°)に winIdx を合わせるには R = -winIdx*slice (mod 360)
   const startRot = currentRotation;
-  const totalTurns = 6 + Math.random() * 2; // 6-8 full turns
-  const jitter = (Math.random() - 0.5) * (slice * 0.7); // stay within slice
+  const totalTurns = 6 + Math.floor(Math.random() * 3); // 必ず整数！ (6, 7, or 8)
+  const jitter = (Math.random() - 0.5) * (slice * 0.7);
+
   const desiredMod = ((-winIdx * slice + jitter) % 360 + 360) % 360;
   const curMod = ((startRot % 360) + 360) % 360;
   let deltaMod = desiredMod - curMod;
@@ -505,13 +491,13 @@ async function startRoulette() {
       let t = (now - startTime) / duration;
       if (t >= 1) t = 1;
 
-      // Smooth deceleration only (easeOutQuint) - no gust re-acceleration
+      // なめらかな減速のみ (easeOutQuint)
       const eased = 1 - Math.pow(1 - t, 5);
 
       currentRotation = startRot + (targetRot - startRot) * eased;
       wheelEl.style.transform = `rotate(${currentRotation}deg)`;
 
-      // Tick sound when passing slice boundary
+      // カチカチ音
       const curIdx = ((Math.round(-currentRotation / slice) % n) + n) % n;
       if (curIdx !== lastSliceIdx && (now - lastTickTime) > 30) {
         playBeep(600 + (curIdx * 50), 0.04, 'square');
@@ -522,7 +508,6 @@ async function startRoulette() {
       if (t < 1) {
         requestAnimationFrame(frame);
       } else {
-        // Done
         wheelEl.classList.add('celebrate');
         setTimeout(() => wheelEl.classList.remove('celebrate'), 1800);
         banner.textContent = winner + ' さん!!';
